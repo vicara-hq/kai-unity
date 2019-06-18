@@ -22,11 +22,6 @@ namespace Kai.SDK
 		public Hand Hand { get; internal set; }
 
 		/// <summary>
-		/// Holds the state of the finger shortcuts
-		/// </summary>
-		public bool[] FingerShortcuts { get; internal set; } = new bool[4];
-
-		/// <summary>
 		/// Occurs when a gesture is performed
 		/// </summary>
 		public EventHandler<GestureEventArgs> Gesture;

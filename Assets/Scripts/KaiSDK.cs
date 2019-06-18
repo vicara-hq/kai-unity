@@ -4,33 +4,36 @@ using WebSocketSharp;
 using Newtonsoft.Json;
 using System.Threading;
 using Newtonsoft.Json.Linq;
+using System.Collections.Generic;
 
 namespace Kai.SDK
 {
 	public static class KaiSDK
 	{
+		internal static GameObject threadSchedulerObject = null;
+		internal static readonly LinkedList<Tuple<Action<object, EventArgs>, object, EventArgs>> actions = new LinkedList<Tuple<Action<object, EventArgs>, object, EventArgs>>();
 		private static Kai[] connectedKais { get; } = new Kai[8];
 		private static bool initialised;
 		private static WebSocket webSocket;
 		private static Thread connectionThread;
-		private static object threadLockContext;
+
 
 		/// <summary>
 		/// Represents a boolean value whether the module is authenticated or not
 		/// </summary>
 		public static bool Authenticated { get; private set; }
-		
+
 		/// <summary>
 		/// Represents the <code>ProcessName</code> of the process that's in focus
 		/// </summary>
 		/// <see cref="System.Diagnostics.Process.ProcessName"/>
 		public static string ForegroundProcess { get; private set; }
-		
+
 		/// <summary>
 		/// Represents the module ID
 		/// </summary>
 		public static string ModuleID { get; private set; }
-		
+
 		/// <summary>
 		/// Represents the secret data of the Module
 		/// </summary>
@@ -60,7 +63,7 @@ namespace Kai.SDK
 		/// Contains the value of the default right Kai that is connected to the SDK
 		/// </summary>
 		public static Kai DefaultRightKai { get; } = new Kai();
-		
+
 		/// <summary>
 		/// Throws data when any Kai receives data
 		/// </summary>
@@ -71,17 +74,23 @@ namespace Kai.SDK
 		/// </summary>
 		public static void Initialise(string moduleId, string moduleSecret)
 		{
-			if(initialised)
+			if (initialised)
 				return;
 
 			ModuleID = moduleId;
 			ModuleSecret = moduleSecret;
-			
+
+			threadSchedulerObject = GameObject.Find("KaiSDK-ThreadSchedulerObject");
+			if (threadSchedulerObject != null)
+			{
+				GameObject.Destroy(threadSchedulerObject);
+			}
+			threadSchedulerObject = new GameObject("KaiSDK-ThreadSchedulerObject", typeof(ThreadScheduler));
+
 			connectionThread = new Thread(ConnectInNewThread);
-			threadLockContext = new object();
-			
+
 			Application.quitting += Disconnect;
-			
+
 			initialised = true;
 		}
 
@@ -103,7 +112,7 @@ namespace Kai.SDK
 		{
 			connectionThread.Start();
 		}
-		
+
 		/// <summary>
 		/// Disconnects from the SDK
 		/// </summary>
@@ -112,7 +121,7 @@ namespace Kai.SDK
 			webSocket.Close();
 			connectionThread.Join();
 			Application.quitting -= Disconnect;
-			
+
 			initialised = false;
 		}
 
@@ -128,7 +137,7 @@ namespace Kai.SDK
 				}.ToString(Formatting.None)
 			);
 		}
-		
+
 		/// <summary>
 		/// Set the Kai's capabilities and subscribes to that data
 		/// </summary>
@@ -166,34 +175,34 @@ namespace Kai.SDK
 
 			if (capabilities.HasFlag(KaiCapabilities.GestureData))
 				json.Add(Constants.GestureData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.LinearFlickData))
 				json.Add(Constants.LinearFlickData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.FingerShortcutData))
 				json.Add(Constants.FingerShortcutData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.FingerPositionalData))
 				json.Add(Constants.FingerPositionalData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.PYRData))
 				json.Add(Constants.PYRData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.QuaternionData))
 				json.Add(Constants.QuaternionData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.AccelerometerData))
 				json.Add(Constants.AccelerometerData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.GyroscopeData))
 				json.Add(Constants.GyroscopeData, true);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.MagnetometerData))
 				json.Add(Constants.MagnetometerData, true);
-			
+
 			Send(json.ToString(Formatting.None));
 		}
-		
+
 		/// <summary>
 		/// Unset the Kai's capabilities and subscribes to that data
 		/// </summary>
@@ -229,47 +238,47 @@ namespace Kai.SDK
 
 			if (capabilities.HasFlag(KaiCapabilities.GestureData))
 				json.Add(Constants.GestureData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.LinearFlickData))
 				json.Add(Constants.LinearFlickData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.FingerShortcutData))
 				json.Add(Constants.FingerShortcutData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.FingerPositionalData))
 				json.Add(Constants.FingerPositionalData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.PYRData))
 				json.Add(Constants.PYRData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.QuaternionData))
 				json.Add(Constants.QuaternionData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.AccelerometerData))
 				json.Add(Constants.AccelerometerData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.GyroscopeData))
 				json.Add(Constants.GyroscopeData, false);
-			
+
 			if (capabilities.HasFlag(KaiCapabilities.MagnetometerData))
 				json.Add(Constants.MagnetometerData, false);
-			
+
 			Send(json.ToString(Formatting.None));
 		}
-		
+
 		private static void ConnectInNewThread()
 		{
-			if(!initialised)
+			if (!initialised)
 				throw new ApplicationException("You must call Initialise() before trying to get data");
-			
+
 			SetupConnections();
-			
+
 			SendAuth(ModuleID, ModuleSecret);
-			
+
 			// TODO check compatibility with SDK
 			// Test compatibility
 		}
-		
+
 		private static void SetupConnections()
 		{
 			webSocket = new WebSocket("ws://localhost:2203");
@@ -290,7 +299,7 @@ namespace Kai.SDK
 
 		private static void Send(string data)
 		{
-			if(webSocket != null)
+			if (webSocket != null)
 			{
 				Debug.Log("Sending " + data);
 				webSocket.Send(data);
@@ -299,12 +308,9 @@ namespace Kai.SDK
 
 		private static void OnWebSocketMessage(object sender, MessageEventArgs e)
 		{
-			lock(threadLockContext)
-			{
-				Handle(e.Data);
-			}
+			Handle(e.Data);
 		}
-		
+
 		private static void SendAuth(string moduleId, string moduleSecret)
 		{
 			var json = new JObject
@@ -370,7 +376,13 @@ namespace Kai.SDK
 			var error = input[Constants.Error].ToObject<string>();
 			var message = input[Constants.Message].ToObject<string>();
 
-			Error?.Invoke(null, new ErrorEventArgs(errorCode, error, message));
+			lock (actions)
+			{
+				actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+				{
+					Error?.Invoke(sender, e as ErrorEventArgs);
+				}, null, new ErrorEventArgs(errorCode, error, message)));
+			}
 		}
 
 		private static void DecodeIncomingData(JObject input)
@@ -435,7 +447,7 @@ namespace Kai.SDK
 						break;
 				}
 			}
-			
+
 			void ParseGestureData(JObject data)
 			{
 				var gesture = data[Constants.Gesture].ToObject<string>();
@@ -449,25 +461,25 @@ namespace Kai.SDK
 					FireUnknownGestureEvent(new UnknownGestureEventArgs(gesture));
 				}
 			}
-	
+
 			void ParseFingerShortcutData(JObject data)
 			{
 				var dataArray = data[Constants.Fingers].ToObject<JArray>();
 				var array = new bool[4];
-				
+
 				for (var i = 0; i < dataArray.Count; i++)
 				{
 					array[i] = dataArray[i].ToObject<bool>();
 				}
-				
+
 				FireFingerShortcutEvent(new FingerShortcutEventArgs(array));
 
 			}
-	
+
 			void ParseQuaternionData(JObject data)
 			{
 				var json = data[Constants.Quaternion].ToObject<JObject>();
-				
+
 				var quaternion = new Quaternion
 				{
 					w = json[Constants.W].ToObject<float>(),
@@ -475,23 +487,23 @@ namespace Kai.SDK
 					y = json[Constants.Y].ToObject<float>(),
 					z = json[Constants.Z].ToObject<float>()
 				};
-				
+
 				FireQuaternionEvent(new QuaternionEventArgs(quaternion));
 			}
-	
+
 			void ParsePYRData(JObject json)
 			{
 				var pitch = json[Constants.Pitch].ToObject<float>();
 				var yaw = json[Constants.Yaw].ToObject<float>();
 				var roll = json[Constants.Roll].ToObject<float>();
-				
+
 				FirePYREvent(new PYREventArgs(pitch, yaw, roll));
 			}
-			
+
 			void ParseLinearFlickData(JObject data)
 			{
 				var flick = data[Constants.Flick].ToObject<string>();
-				
+
 				FireLinearFlickEvent(new LinearFlickEventArgs(flick));
 			}
 
@@ -499,187 +511,427 @@ namespace Kai.SDK
 			{
 				var json = data[Constants.Fingers].ToObject<JObject>();
 				var array = new int[4];
-				
+
 				for (var i = 0; i < json.Count; i++)
 				{
 					array[i] = json[i].ToObject<int>();
 				}
-				
+
 				FireFingerPositionalEvent(new FingerPositionalEventArgs(array));
 			}
 
 			void ParseAccelerometerData(JObject data)
 			{
 				var json = data[Constants.Accelerometer].ToObject<JObject>();
-				
+
 				var accelerometer = new Vector3
 				{
 					x = json[Constants.X].ToObject<float>(),
 					y = json[Constants.Y].ToObject<float>(),
 					z = json[Constants.Z].ToObject<float>()
 				};
-				
+
 				FireAccelerometerEvent(new AccelerometerEventArgs(accelerometer));
 			}
-			
+
 			void ParseGyroscopeData(JObject data)
 			{
 				var json = data[Constants.Gyroscope].ToObject<JObject>();
-				
+
 				var gyroscope = new Vector3
 				{
 					x = json[Constants.X].ToObject<float>(),
 					y = json[Constants.Y].ToObject<float>(),
 					z = json[Constants.Z].ToObject<float>()
 				};
-				
+
 				FireGyroscopeEvent(new GyroscopeEventArgs(gyroscope));
 			}
-			
+
 			void ParseMagnetometerData(JObject data)
 			{
 				var json = data[Constants.Magnetometer].ToObject<JObject>();
-				
+
 				var magnetometer = new Vector3
 				{
 					x = json[Constants.X].ToObject<float>(),
 					y = json[Constants.Y].ToObject<float>(),
 					z = json[Constants.Z].ToObject<float>()
 				};
-				
+
 				FireMagnetometerEvent(new MagnetometerEventArgs(magnetometer));
 			}
-			
+
 			void FireGestureEvent(GestureEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.Gesture?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.Gesture?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.Gesture?.Invoke(DefaultRightKai, args);
-					
-				kai.Gesture?.Invoke(kai, args);
-				AnyKai.Gesture?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).Gesture?.Invoke(sender, e as GestureEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).Gesture?.Invoke(sender, e as GestureEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).Gesture?.Invoke(sender, e as GestureEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).Gesture?.Invoke(sender, e as GestureEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).Gesture?.Invoke(sender, e as GestureEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireUnknownGestureEvent(UnknownGestureEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.UnknownGesture?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.UnknownGesture?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.UnknownGesture?.Invoke(DefaultRightKai, args);
-					
-				kai.UnknownGesture?.Invoke(kai, args);
-				AnyKai.UnknownGesture?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).UnknownGesture?.Invoke(sender, e as UnknownGestureEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).UnknownGesture?.Invoke(sender, e as UnknownGestureEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).UnknownGesture?.Invoke(sender, e as UnknownGestureEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).UnknownGesture?.Invoke(sender, e as UnknownGestureEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).UnknownGesture?.Invoke(sender, e as UnknownGestureEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireLinearFlickEvent(LinearFlickEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.LinearFlick?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.LinearFlick?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.LinearFlick?.Invoke(DefaultRightKai, args);
-					
-				kai.LinearFlick?.Invoke(kai, args);
-				AnyKai.LinearFlick?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).LinearFlick?.Invoke(sender, e as LinearFlickEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).LinearFlick?.Invoke(sender, e as LinearFlickEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).LinearFlick?.Invoke(sender, e as LinearFlickEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).LinearFlick?.Invoke(sender, e as LinearFlickEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).LinearFlick?.Invoke(sender, e as LinearFlickEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireFingerShortcutEvent(FingerShortcutEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.FingerShortcut?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.FingerShortcut?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.FingerShortcut?.Invoke(DefaultRightKai, args);
-					
-				kai.FingerShortcut?.Invoke(kai, args);
-				kai.FingerShortcuts = args.Fingers;
-				AnyKai.FingerShortcut?.Invoke(kai, args);
-				AnyKai.FingerShortcuts = args.Fingers;
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).FingerShortcut?.Invoke(sender, e as FingerShortcutEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).FingerShortcut?.Invoke(sender, e as FingerShortcutEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).FingerShortcut?.Invoke(sender, e as FingerShortcutEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).FingerShortcut?.Invoke(sender, e as FingerShortcutEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).FingerShortcut?.Invoke(sender, e as FingerShortcutEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireFingerPositionalEvent(FingerPositionalEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.FingerPositionalData?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.FingerPositionalData?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.FingerPositionalData?.Invoke(DefaultRightKai, args);
-					
-				kai.FingerPositionalData?.Invoke(kai, args);
-				AnyKai.FingerPositionalData?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).FingerPositionalData?.Invoke(sender, e as FingerPositionalEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).FingerPositionalData?.Invoke(sender, e as FingerPositionalEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).FingerPositionalData?.Invoke(sender, e as FingerPositionalEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).FingerPositionalData?.Invoke(sender, e as FingerPositionalEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).FingerPositionalData?.Invoke(sender, e as FingerPositionalEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FirePYREvent(PYREventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.PYRData?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.PYRData?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.PYRData?.Invoke(DefaultRightKai, args);
-					
-				kai.PYRData?.Invoke(kai, args);
-				AnyKai.PYRData?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).PYRData?.Invoke(sender, e as PYREventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).PYRData?.Invoke(sender, e as PYREventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).PYRData?.Invoke(sender, e as PYREventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).PYRData?.Invoke(sender, e as PYREventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).PYRData?.Invoke(sender, e as PYREventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireQuaternionEvent(QuaternionEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.QuaternionData?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.QuaternionData?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.QuaternionData?.Invoke(DefaultRightKai, args);
-					
-				kai.QuaternionData?.Invoke(kai, args);
-				AnyKai.QuaternionData?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).QuaternionData?.Invoke(sender, e as QuaternionEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).QuaternionData?.Invoke(sender, e as QuaternionEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).QuaternionData?.Invoke(sender, e as QuaternionEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).QuaternionData?.Invoke(sender, e as QuaternionEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).QuaternionData?.Invoke(sender, e as QuaternionEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireAccelerometerEvent(AccelerometerEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.AccelerometerData?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.AccelerometerData?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.AccelerometerData?.Invoke(DefaultRightKai, args);
-					
-				kai.AccelerometerData?.Invoke(kai, args);
-				AnyKai.AccelerometerData?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).AccelerometerData?.Invoke(sender, e as AccelerometerEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).AccelerometerData?.Invoke(sender, e as AccelerometerEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).AccelerometerData?.Invoke(sender, e as AccelerometerEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).AccelerometerData?.Invoke(sender, e as AccelerometerEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).AccelerometerData?.Invoke(sender, e as AccelerometerEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireGyroscopeEvent(GyroscopeEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.GyroscopeData?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.GyroscopeData?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.GyroscopeData?.Invoke(DefaultRightKai, args);
-					
-				kai.GyroscopeData?.Invoke(kai, args);
-				AnyKai.GyroscopeData?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+					}, AnyKai, args));
+				}
 			}
-			
+
 			void FireMagnetometerEvent(MagnetometerEventArgs args)
 			{
-				if (defaultKai == true)
-					DefaultKai.MagnetometerData?.Invoke(DefaultKai, args);
-				if (defaultLeftKai == true)
-					DefaultLeftKai.MagnetometerData?.Invoke(DefaultLeftKai, args);
-				if (defaultRightKai == true)
-					DefaultRightKai.MagnetometerData?.Invoke(DefaultRightKai, args);
-					
-				kai.MagnetometerData?.Invoke(kai, args);
-				AnyKai.MagnetometerData?.Invoke(kai, args);
+				lock (actions)
+				{
+					if (defaultKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+						}, DefaultKai, args));
+					}
+					if (defaultLeftKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+						}, DefaultLeftKai, args));
+					}
+					if (defaultRightKai == true)
+					{
+						actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+						{
+							(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+						}, DefaultRightKai, args));
+					}
+
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+					}, kai, args));
+					actions.AddLast(new Tuple<Action<object, EventArgs>, object, EventArgs>((sender, e) =>
+					{
+						(sender as Kai).GyroscopeData?.Invoke(sender, e as GyroscopeEventArgs);
+					}, AnyKai, args));
+				}
 			}
 		}
 
@@ -693,7 +945,7 @@ namespace Kai.SDK
 		{
 			var kaiList = input[Constants.Kais].ToObject<JArray>();
 			foreach (var token in kaiList)
-				DecodeKaiConnected((JObject) token);
+				DecodeKaiConnected((JObject)token);
 		}
 
 		private static void DecodeKaiConnected(JObject input)
@@ -708,7 +960,7 @@ namespace Kai.SDK
 			//var kaiParsed = KaiObjectParsed.Parse(input);
 			if (!Enum.TryParse(hand, true, out Hand handEnum))
 				handEnum = Hand.Left;
-			
+
 			if (defaultKai == true)
 			{
 				DefaultKai.KaiID = kaiID;
@@ -726,14 +978,14 @@ namespace Kai.SDK
 				DefaultRightKai.KaiID = kaiID;
 				DefaultRightKai.Hand = Hand.Right;
 			}
-			
+
 			connectedKais[kaiID] = new Kai
 			{
 				KaiID = kaiID,
 				Hand = handEnum
 			};
-			
-			if(defaultKai == true || defaultLeftKai == true || defaultRightKai == true)
+
+			if (defaultKai == true || defaultLeftKai == true || defaultRightKai == true)
 			{
 				ResetDefaultCapabilities();
 			}
