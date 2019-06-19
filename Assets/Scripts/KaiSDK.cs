@@ -148,6 +148,8 @@ namespace Kai.SDK
 			var newCapabilities = kai.Capabilities | capabilities;
 
 			kai.Capabilities = newCapabilities;
+			if(kai.Capabilities == 0)
+				return;
 			if (!Authenticated)
 				return;
 
@@ -993,8 +995,14 @@ namespace Kai.SDK
 
 		private static void ResetDefaultCapabilities()
 		{
-			DefaultLeftKai.SetCapabilities(DefaultLeftKai.Capabilities);
-			DefaultRightKai.SetCapabilities(DefaultRightKai.Capabilities);
+			if (DefaultKai.Capabilities != 0)
+				DefaultKai.SetCapabilities(DefaultKai.Capabilities);
+			
+			if (DefaultLeftKai.Capabilities != 0)
+				DefaultLeftKai.SetCapabilities(DefaultLeftKai.Capabilities);
+
+			if (DefaultRightKai.Capabilities != 0)
+				DefaultRightKai.SetCapabilities(DefaultRightKai.Capabilities);
 		}
 	}
 }
